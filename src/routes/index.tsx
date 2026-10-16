@@ -1,6 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { pageHead } from "@/lib/head";
-import { useAppState } from "@/lib/store";
+import { useEffect, useState } from "react";
+import { changePeriod, clockPause, clockReset, clockStart, useAppState } from "@/lib/store";
+import { elapsedMs, formatClock } from "@/domain/clock";
+import type { MatchClock } from "@/domain/clock";
 import { StatusPill, triState } from "@/components/vsr/Status";
 
 export const Route = createFileRoute("/")({
@@ -25,10 +28,10 @@ function Dashboard() {
         </div>
         <div className="ml-auto flex gap-2">
           <StatusPill tone={m.status === "READY" ? "ok" : "warn"}>Match {m.status}</StatusPill>
-          <StatusPill tone="off">Period {m.period}</StatusPill>
-          <StatusPill tone="off">Clock: not available</StatusPill>
         </div>
       </section>
+
+      <ClockPanel clock={m.clock} period={m.period} />
 
       <section className="panel col-span-8">
         <div className="panel-title">System status</div>
@@ -94,4 +97,34 @@ function Dashboard() {
 
 function Row({ k, children }: { k: string; children: React.ReactNode }) {
   return <div className="flex items-center justify-between bg-panel px-4 py-3 text-sm"><span className="text-muted-foreground">{k}</span>{children}</div>;
+}
+
+function ClockPanel({ clock, period }: { clock: MatchClock; period: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!clock.running) return;
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [clock.running]);
+  const ms = elapsedMs(clock, clock.running ? now : 0);
+  const over = ms >= clock.periodLengthSec * 1000;
+  const btn = "rounded-sm border px-3 py-1.5 text-sm font-semibold uppercase tracking-wide hover:bg-secondary disabled:opacity-40";
+  return (
+    <section className="panel col-span-12 flex flex-wrap items-center gap-6 px-6 py-4" aria-label="Match clock">
+      <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Match clock</div>
+      <div className={`font-mono text-4xl font-bold tabular-nums ${over ? "text-live" : ""}`}>{formatClock(ms)}</div>
+      <StatusPill tone={clock.running ? "ok" : "off"}>{clock.running ? "Running" : "Paused"}</StatusPill>
+      <div className="flex gap-2">
+        {clock.running
+          ? <button className={btn} onClick={clockPause}>Pause</button>
+          : <button className={btn} onClick={clockStart}>Start</button>}
+        <button className={btn} onClick={clockReset}>Reset</button>
+      </div>
+      <div className="ml-auto flex items-center gap-2">
+        <button className={btn} onClick={() => changePeriod(-1)} disabled={period <= 1} aria-label="Previous period">−</button>
+        <span className="font-mono text-lg font-bold">Period {period}</span>
+        <button className={btn} onClick={() => changePeriod(1)} aria-label="Next period">+</button>
+      </div>
+    </section>
+  );
 }
