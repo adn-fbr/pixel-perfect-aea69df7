@@ -42,7 +42,7 @@ export async function bridgeCall<T>(
     const res = await fetch(baseUrl.replace(/\/$/, "") + path, {
       method,
       headers: { "x-vsr-token": getToken(), ...(method === "POST" ? { "content-type": "application/json" } : {}) },
-      body: method === "POST" ? "{}" : undefined,
+      body: method === "POST" ? "{}" : null,
       signal: ctrl.signal,
     });
     const body = (await res.json()) as BridgeResponse<T>;
