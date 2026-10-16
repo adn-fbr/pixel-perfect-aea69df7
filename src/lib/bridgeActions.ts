@@ -1,4 +1,4 @@
-import { bridgeCall } from "./bridge";
+import { bridgeCall, type BridgeResponse } from "./bridge";
 import { audit, getState, setMode, updateBridge } from "./store";
 import type { BridgeInfo } from "@/domain/types";
 
@@ -7,6 +7,7 @@ type Version = NonNullable<BridgeInfo["obsVersion"]>;
 let discoverySequence = 0;
 let connectionGeneration = 0;
 let statusSequence = 0;
+let activeConnectRequest: Promise<BridgeResponse<Version>> | null = null;
 
 function invalidatePendingRequests() {
   discoverySequence += 1;
@@ -17,35 +18,56 @@ function invalidatePendingRequests() {
 /** Deliberate operator action: health → connect → read version/scenes/sources. */
 export async function connectToObs() {
   invalidatePendingRequests();
+  const generation = connectionGeneration;
   const url = getState().bridge.url;
   const prevMode = getState().mode;
   setMode("CONNECTING");
   updateBridge({ discoveryStatus: "IDLE", discoveryError: null });
   audit("BRIDGE_CONNECT", "ACCEPTED", url);
 
-  const health = await bridgeCall<{ bridgeVersion: string }>(url, "/api/health");
-  if (!health.success) {
-    updateBridge({ lastError: err(health), lastCheckedAt: now(), obsState: null });
-    setMode(prevMode === "CONNECTING" ? "DEMO" : prevMode === "OBS_CONNECTED" ? "DISCONNECTED" : prevMode);
-    audit("BRIDGE_CONNECT", "FAILED", health.message);
-    return;
-  }
-  updateBridge({ bridgeVersion: health.data?.bridgeVersion ?? null });
+  try {
+    const health = await bridgeCall<{ bridgeVersion: string }>(url, "/api/health");
+    if (generation !== connectionGeneration) return;
+    if (!health.success) {
+      updateBridge({ lastError: err(health), lastCheckedAt: now(), obsState: null });
+      setMode(prevMode === "DEMO" ? "DEMO" : "DISCONNECTED");
+      audit("BRIDGE_CONNECT", "FAILED", health.message);
+      return;
+    }
+    updateBridge({ bridgeVersion: health.data?.bridgeVersion ?? null });
 
-  const c = await bridgeCall<Version>(url, "/api/obs/connect", "POST", 15000);
-  if (!c.success) {
+    const connectRequest = bridgeCall<Version>(url, "/api/obs/connect", "POST", 65000);
+    activeConnectRequest = connectRequest;
+    let c: Awaited<typeof connectRequest>;
+    try {
+      c = await connectRequest;
+    } finally {
+      if (activeConnectRequest === connectRequest) activeConnectRequest = null;
+    }
+    if (generation !== connectionGeneration) return;
+    if (!c.success) {
+      updateBridge({
+        lastError: err(c), lastCheckedAt: now(), obsState: "OBS_ERROR", obsVersion: null,
+        discoveryStatus: "IDLE", discoveryError: null,
+      });
+      setMode("DISCONNECTED");
+      audit("OBS_CONNECT", "FAILED", `${c.errorCode}: ${c.message}`);
+      return;
+    }
+    updateBridge({ obsVersion: c.data ?? null, obsState: "OBS_CONNECTED", lastError: null });
+    setMode("OBS_CONNECTED");
+    audit("OBS_CONNECT", "COMPLETED", `OBS ${c.data?.obsVersion}`);
+    await refreshDiscovery();
+  } catch {
+    if (generation !== connectionGeneration) return;
     updateBridge({
-      lastError: err(c), lastCheckedAt: now(), obsState: "OBS_ERROR", obsVersion: null,
+      lastError: { code: "BRIDGE_REQUEST_FAILED", message: "The bridge connection request failed.", at: now() },
+      lastCheckedAt: now(), obsState: "OBS_ERROR", obsVersion: null,
       discoveryStatus: "IDLE", discoveryError: null,
     });
     setMode("DISCONNECTED");
-    audit("OBS_CONNECT", "FAILED", `${c.errorCode}: ${c.message}`);
-    return;
+    audit("OBS_CONNECT", "FAILED", "BRIDGE_REQUEST_FAILED");
   }
-  updateBridge({ obsVersion: c.data ?? null, obsState: "OBS_CONNECTED", lastError: null });
-  setMode("OBS_CONNECTED");
-  audit("OBS_CONNECT", "COMPLETED", `OBS ${c.data?.obsVersion}`);
-  await refreshDiscovery();
 }
 
 export async function refreshDiscovery() {
@@ -122,11 +144,23 @@ export async function pollStatus() {
 
 export async function disconnectObs() {
   invalidatePendingRequests();
+  const pendingConnect = activeConnectRequest;
+  if (pendingConnect) {
+    try { await pendingConnect; } catch { /* disconnect still proceeds after a failed connect request */ }
+  }
   const url = getState().bridge.url;
-  const r = await bridgeCall(url, "/api/obs/disconnect", "POST");
-  audit("OBS_DISCONNECT", r.success ? "COMPLETED" : "FAILED", r.message);
+  let succeeded = false;
+  let detail = "Bridge disconnect request failed.";
+  try {
+    const r = await bridgeCall(url, "/api/obs/disconnect", "POST");
+    succeeded = r.success;
+    detail = r.message;
+  } catch {
+    detail = "Bridge disconnect request failed.";
+  }
+  audit("OBS_DISCONNECT", succeeded ? "COMPLETED" : "FAILED", detail);
   updateBridge({
-    obsState: r.success ? "OBS_DISCONNECTED" : null, obsVersion: null, scenes: [], sources: [], currentScene: null,
+    obsState: succeeded ? "OBS_DISCONNECTED" : null, obsVersion: null, scenes: [], sources: [], currentScene: null,
     discoveryStatus: "IDLE", discoveryError: null,
   });
   setMode("DISCONNECTED");

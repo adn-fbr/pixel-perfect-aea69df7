@@ -20,19 +20,35 @@ function cfg(): BridgeConfig {
 
 class FakeObs implements ObsClient {
   closeCb: ((e: { code?: number; message?: string }) => void) | null = null;
-  constructor(private behavior: "ok" | "badpw" | "refused" | "hang" | "sensitive-error" = "ok") {}
+  disconnectCalls = 0;
+  private finishConnect: (() => void) | null = null;
+  private versionCalls = 0;
+  private finishVersion: (() => void) | null = null;
+  constructor(private behavior: "ok" | "badpw" | "refused" | "hang" | "deferred-connect" | "deferred-second-version" | "sensitive-error" = "ok") {}
   async connect(_u: string, pw?: string) {
     if (this.behavior === "hang") return new Promise<never>(() => {});
     if (this.behavior === "refused") throw Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:4455"), { code: 1006 });
+    if (this.behavior === "deferred-connect") {
+      await new Promise<void>((resolve) => { this.finishConnect = resolve; });
+      return { negotiatedRpcVersion: 1 };
+    }
     if (this.behavior === "sensitive-error") {
       throw Object.assign(new Error(`authentication payload password=${PASSWORD} token=${TOKEN} url=ws://127.0.0.1:4455`), { code: "EINTERNAL" });
     }
     if (this.behavior === "badpw" || pw !== PASSWORD) throw Object.assign(new Error("Authentication failed."), { code: 4009 });
     return { negotiatedRpcVersion: 1 };
   }
-  async disconnect() {}
+  completeConnect() { this.finishConnect?.(); }
+  completeVersion() { this.finishVersion?.(); }
+  async disconnect() { this.disconnectCalls += 1; }
   async call(req: string) {
-    if (req === "GetVersion") return { obsVersion: "32.2.2", obsWebSocketVersion: "5.6.3", rpcVersion: 1, platform: "windows", platformDescription: "Windows 11" };
+    if (req === "GetVersion") {
+      this.versionCalls += 1;
+      if (this.behavior === "deferred-second-version" && this.versionCalls === 2) {
+        await new Promise<void>((resolve) => { this.finishVersion = resolve; });
+      }
+      return { obsVersion: "32.2.2", obsWebSocketVersion: "5.6.3", rpcVersion: 1, platform: "windows", platformDescription: "Windows 11" };
+    }
     if (req === "GetSceneList") return { currentProgramSceneName: "Main", scenes: [{ sceneName: "Main", sceneIndex: 0 }, { bogus: 1 }] };
     if (req === "GetInputList") return { inputs: [{ inputName: "USB Cam 1", inputKind: "dshow_input", unversionedInputKind: "dshow_input" }, { nope: true }] };
     if (req === "GetStudioModeEnabled") return { studioModeEnabled: false };
@@ -41,7 +57,7 @@ class FakeObs implements ObsClient {
   on(_e: "ConnectionClosed", cb: (e: { code?: number; message?: string }) => void) { this.closeCb = cb; }
 }
 
-function setup(behaviors: Array<"ok" | "badpw" | "refused" | "hang" | "sensitive-error"> = ["ok"], autoReconnect = false) {
+function setup(behaviors: Array<"ok" | "badpw" | "refused" | "hang" | "deferred-connect" | "deferred-second-version" | "sensitive-error"> = ["ok"], autoReconnect = false) {
   const c = cfg();
   const clients: FakeObs[] = [];
   const logs: string[] = [];
@@ -192,6 +208,69 @@ describe("[mock] OBS connection", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(adapter.getConnectionStatus().state).toBe("OBS_DISCONNECTED");
     expect(clients.length).toBe(1);
+  });
+  it("invalidates an in-flight handshake when deliberately disconnected", async () => {
+    const { adapter, clients } = setup(["deferred-connect"], true);
+    const pendingConnect = adapter.connect();
+    const oldClient = clients[0]!;
+    await adapter.disconnect();
+
+    expect(adapter.getConnectionStatus().state).toBe("OBS_DISCONNECTED");
+    expect(oldClient.disconnectCalls).toBeGreaterThan(0);
+    oldClient.completeConnect();
+    const result = await pendingConnect;
+
+    expect(result).toMatchObject({ ok: false, error: { code: "INVALID_REQUEST", message: "OBS connection attempt was cancelled" } });
+    expect(adapter.getConnectionStatus().state).toBe("OBS_DISCONNECTED");
+    expect(clients).toHaveLength(1);
+  });
+  it("does not schedule another reconnect when a retry is intentionally disconnected", async () => {
+    vi.useFakeTimers();
+    try {
+      const { adapter, clients } = setup(["ok", "deferred-connect", "ok"], true);
+      await adapter.connect();
+      clients[0]!.closeCb!({ code: 1006 });
+      vi.advanceTimersByTime(5);
+      expect(clients).toHaveLength(2);
+
+      await adapter.disconnect();
+      clients[1]!.completeConnect();
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      expect(adapter.getConnectionStatus().state).toBe("OBS_DISCONNECTED");
+      expect(clients).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("allows a fresh explicit connection after cancelling an in-flight attempt", async () => {
+    const { adapter, clients } = setup(["deferred-connect", "ok"], true);
+    const pendingConnect = adapter.connect();
+    const staleClient = clients[0]!;
+    await adapter.disconnect();
+    staleClient.completeConnect();
+    await pendingConnect;
+
+    const freshResult = await adapter.connect();
+    expect(freshResult.ok).toBe(true);
+    expect(adapter.getConnectionStatus().state).toBe("OBS_CONNECTED");
+    expect(clients).toHaveLength(2);
+  });
+  it("leaves connection state out of CONNECTING after a failed attempt", async () => {
+    const { adapter } = setup(["refused"]);
+    const result = await adapter.connect();
+    expect(result).toMatchObject({ ok: false, error: { code: "CONNECTION_REFUSED" } });
+    expect(adapter.getConnectionStatus().state).toBe("OBS_ERROR");
+  });
+  it("discards a late version response from the disconnected session", async () => {
+    const { adapter, clients } = setup(["deferred-second-version"]);
+    expect((await adapter.connect()).ok).toBe(true);
+    const pendingVersion = adapter.getObsVersion();
+    await adapter.disconnect();
+    clients[0]!.completeVersion();
+
+    expect(await pendingVersion).toMatchObject({ ok: false, error: { code: "NOT_CONNECTED" } });
+    expect(adapter.getConnectionStatus().state).toBe("OBS_DISCONNECTED");
   });
 });
 

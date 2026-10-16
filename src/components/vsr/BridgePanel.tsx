@@ -9,10 +9,20 @@ export function BridgePanel() {
   const b = useAppState((s) => s.bridge);
   const cams = useAppState((s) => s.cameras);
   const [token, setTok] = useState("");
+  const [disconnecting, setDisconnecting] = useState(false);
   useEffect(() => setTok(getToken()), []);
   const urlOk = isLoopbackUrl(b.url);
   const busy = mode === "CONNECTING";
   const live = mode !== "DEMO";
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      await disconnectObs();
+    } finally {
+      setDisconnecting(false);
+    }
+  }
 
   return (
     <section className="panel">
@@ -35,7 +45,9 @@ export function BridgePanel() {
           <button className="btn btn-ok" disabled={busy || !urlOk || !token} onClick={() => void connectToObs()}
             title={!token ? "Enter the pairing token first" : undefined}>{busy ? "Connecting…" : live ? "Reconnect" : "Connect to OBS"}</button>
           <button className="btn btn-neutral" disabled={!live || busy} onClick={() => void refreshDiscovery()}>Refresh scenes & sources</button>
-          <button className="btn btn-neutral" disabled={!live || busy} onClick={() => void disconnectObs()}>Disconnect</button>
+          <button className="btn btn-neutral" disabled={!live || disconnecting} onClick={() => void handleDisconnect()}>
+            {disconnecting ? "Disconnecting…" : "Disconnect"}
+          </button>
           <button className="btn btn-neutral ml-auto" disabled={!live || busy} onClick={returnToDemo}>Back to demo</button>
         </div>
         {b.lastError && (

@@ -36,6 +36,8 @@ export function classifyError(err: { code?: number | string } | unknown): { code
 export class ObsWebSocketAdapter implements ObsAdapter {
   private status: ObsStatus = { state: "BRIDGE_READY", connectedAt: null, lastError: null, reconnectAttempts: 0 };
   private client: ObsClient | null = null;
+  private pendingClients = new Set<ObsClient>();
+  private connectionGeneration = 0;
   private manualDisconnect = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
 
@@ -49,9 +51,9 @@ export class ObsWebSocketAdapter implements ObsAdapter {
     this.opts.log?.(`[obs] ${code}`);
   }
 
-  private withTimeout<T>(p: Promise<T>): Promise<T> {
+  private withTimeout<T>(p: Promise<T>, timeoutMs = this.opts.timeoutMs): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const t = setTimeout(() => reject(Object.assign(new Error(), { code: "BRIDGE_TIMEOUT" })), this.opts.timeoutMs);
+      const t = setTimeout(() => reject(Object.assign(new Error(), { code: "BRIDGE_TIMEOUT" })), timeoutMs);
       p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
     });
   }
@@ -61,23 +63,55 @@ export class ObsWebSocketAdapter implements ObsAdapter {
     if (this.status.state === "OBS_CONNECTED") return this.getObsVersion();
     this.clearReconnect();
     this.manualDisconnect = false;
+    const generation = ++this.connectionGeneration;
     this.status = { ...this.status, state: "OBS_CONNECTING" };
     const client = this.createClient();
+    this.pendingClients.add(client);
+    const deadline = Date.now() + this.opts.timeoutMs;
     try {
-      await this.withTimeout(client.connect(this.opts.url, this.opts.password || undefined, { rpcVersion: 1 }));
+      await this.withTimeout(
+        client.connect(this.opts.url, this.opts.password || undefined, { rpcVersion: 1 }),
+        Math.max(0, deadline - Date.now()),
+      );
+      if (!this.isCurrentAttempt(generation)) {
+        void this.closeClient(client);
+        return this.cancelledAttempt();
+      }
       // Handshake alone is not enough: require a valid GetVersion response.
-      const v = await this.withTimeout(client.call("GetVersion"));
+      const v = await this.withTimeout(client.call("GetVersion"), Math.max(0, deadline - Date.now()));
+      if (!this.isCurrentAttempt(generation)) {
+        void this.closeClient(client);
+        return this.cancelledAttempt();
+      }
       if (!v || typeof v.obsVersion !== "string") throw new Error("Invalid GetVersion response from OBS");
       this.client = client;
       client.on("ConnectionClosed", (err) => this.onClosed(client, err));
       this.status = { state: "OBS_CONNECTED", connectedAt: now(), lastError: null, reconnectAttempts: 0 };
       return { ok: true, data: toVersion(v) };
     } catch (err) {
-      try { await client.disconnect(); } catch { /* ignore */ }
+      if (!this.isCurrentAttempt(generation)) {
+        void this.closeClient(client);
+        return this.cancelledAttempt();
+      }
       const c = classifyError(err);
       this.setError(c.code, c.message);
+      void this.closeClient(client);
       return { ok: false, error: this.status.lastError! };
+    } finally {
+      this.pendingClients.delete(client);
     }
+  }
+
+  private isCurrentAttempt(generation: number) {
+    return generation === this.connectionGeneration && !this.manualDisconnect;
+  }
+
+  private cancelledAttempt(): AdapterResult<ObsVersionInfo> {
+    return { ok: false, error: { code: "INVALID_REQUEST", message: "OBS connection attempt was cancelled", at: now() } };
+  }
+
+  private async closeClient(client: ObsClient) {
+    try { await client.disconnect(); } catch { /* disconnect is best-effort during cancellation */ }
   }
 
   private onClosed(client: ObsClient, _err: { code?: number; message?: string }) {
@@ -100,7 +134,10 @@ export class ObsWebSocketAdapter implements ObsAdapter {
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       const lastErr = this.status.lastError;
-      const r = await this.connect();
+      const connecting = this.connect();
+      const generation = this.connectionGeneration;
+      const r = await connecting;
+      if (generation !== this.connectionGeneration || this.manualDisconnect) return;
       if (!r.ok) {
         // keep the attempt counter and original disconnect context, then retry (read-only, safe)
         this.status = { ...this.status, state: "OBS_DISCONNECTED", reconnectAttempts: attempt, lastError: this.status.lastError ?? lastErr };
@@ -113,20 +150,31 @@ export class ObsWebSocketAdapter implements ObsAdapter {
 
   async disconnect(): Promise<void> {
     this.manualDisconnect = true;
+    this.connectionGeneration += 1;
     this.clearReconnect();
     const c = this.client;
     this.client = null;
-    if (c) { try { await c.disconnect(); } catch { /* ignore */ } }
     this.status = { ...this.status, state: "OBS_DISCONNECTED", connectedAt: null, reconnectAttempts: 0 };
+    for (const pending of this.pendingClients) void this.closeClient(pending);
+    if (c) await this.closeClient(c);
   }
 
   private async call<T>(request: string, map: (r: any) => T): Promise<AdapterResult<T>> {
-    if (!this.client || this.status.state !== "OBS_CONNECTED") {
+    const client = this.client;
+    const generation = this.connectionGeneration;
+    if (!client || this.status.state !== "OBS_CONNECTED") {
       return { ok: false, error: { code: "NOT_CONNECTED", message: "OBS is not connected", at: now() } };
     }
     try {
-      return { ok: true, data: map(await this.withTimeout(this.client.call(request))) };
+      const result = await this.withTimeout(client.call(request));
+      if (client !== this.client || generation !== this.connectionGeneration || this.status.state !== "OBS_CONNECTED") {
+        return { ok: false, error: { code: "NOT_CONNECTED", message: "OBS is not connected", at: now() } };
+      }
+      return { ok: true, data: map(result) };
     } catch (err) {
+      if (client !== this.client || generation !== this.connectionGeneration || this.status.state !== "OBS_CONNECTED") {
+        return { ok: false, error: { code: "NOT_CONNECTED", message: "OBS is not connected", at: now() } };
+      }
       const c = classifyError(err);
       return { ok: false, error: { ...c, at: now() } };
     }

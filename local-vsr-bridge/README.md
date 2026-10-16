@@ -16,7 +16,7 @@ Statuses describe evidence, not intended functionality:
 | Read-only scene and input-source discovery | IMPLEMENTED | `GetSceneList` and `GetInputList`; source discovery does not prove camera operation |
 | Browser source-name matching | IMPLEMENTED | Exact-name display mapping for the three configured camera names |
 | Preventing OBS connection from enabling simulated replay | IMPLEMENTED | Store resets camera status outside DEMO and blocks replay outside DEMO |
-| Bridge build and application checks in this audit | NOT_TESTED | Node.js and npm were unavailable on the audit machine on 2026-10-16 |
+| Bridge build and application checks in this audit | NOT_TESTED | Node.js and npm were unavailable on the audit machine on 2026-10-17 |
 | Bridge mock tests in this audit | NOT_TESTED | The mock suite and new regression cases were not executed in this audit |
 | Real OBS connection, physical cameras, recording, Source Record | UNVERIFIED | No hardware test was run; no hardware evidence is available |
 
@@ -48,6 +48,9 @@ hardware evidence.
   exception text; a regression test covers dummy password/token values.
 - [x] Discovery state and errors are separate from OBS transport state;
   successful refreshes clear discovery errors and stale results are guarded.
+- [x] Disconnect invalidates in-flight connection attempts at both the bridge
+  adapter and browser state layers; late responses cannot restore the prior
+  session.
 - [ ] Execute the new regression tests and the remaining checks on a machine
   with the declared Node/npm toolchain.
 
@@ -65,8 +68,22 @@ hardware evidence.
   prevent older refreshes or results arriving after a disconnect from
   overwriting current state. Focused regression tests are present but have not
   been executed in this environment.
-- Intentional disconnect prevents automatic reconnection in the tested
-  ordinary sequence. A disconnect racing an in-flight connect is not covered.
+- Intentional disconnect invalidates the active adapter attempt and the
+  frontend connect generation. The browser waits for an already-sent connect
+  request to settle before it sends the disconnect request, then the adapter
+  invalidates its attempt and rejects any late result. A stale client is
+  closed best-effort; the operator can explicitly connect again after
+  disconnect completes. The OBS WebSocket client API used here has no
+  cancellation signal, so this guarantees the stale attempt cannot become the
+  adapter/UI's connected session, but cannot guarantee that an underlying
+  network handshake is physically aborted at the instant Disconnect is
+  pressed. The adapter applies one overall connection timeout (at most 60
+  seconds by configuration), and the browser allows a 5-second response
+  margin before it times out that request. If the handshake completes after
+  invalidation, the adapter requests client shutdown again.
+  Deterministic regression tests cover delayed handshake/version/discovery
+  responses and fresh connection, but remain unexecuted until the Node/npm
+  toolchain is available.
 - `GetInputList` discovers OBS inputs, not physical camera health, capture
   frames, or necessarily the source items actually used by the active scene.
   The browser's mapping is an exact name comparison, not a device test.
