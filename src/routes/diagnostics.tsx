@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { pageHead } from "@/lib/head";
 import { useAppState } from "@/lib/store";
 import { StatusPill } from "@/components/vsr/Status";
+import { BridgePanel } from "@/components/vsr/BridgePanel";
 import { DEFAULT_SHORTCUTS, SHORTCUT_LABELS, type ShortcutAction } from "@/domain/shortcuts";
 
 export const Route = createFileRoute("/diagnostics")({
@@ -10,9 +11,6 @@ export const Route = createFileRoute("/diagnostics")({
 });
 
 const checks: [string, string][] = [
-  ["OBS WebSocket connection", "Requires Local VSR Bridge (Phase 2)"],
-  ["OBS version", "Reported only by a real connection"],
-  ["Bridge version", "Bridge not built"],
   ["Source Record 0.4.8 plugin", "Capability not verified (Phase 3)"],
   ["Recording state", "Unverifiable"],
   ["Storage free space", "Unverifiable"],
@@ -26,7 +24,9 @@ function Diagnostics() {
   const mode = useAppState((s) => s.mode);
   return (
     <div className="grid grid-cols-12 gap-4">
-      <section className="panel col-span-7">
+      <div className="col-span-7 flex flex-col gap-4">
+      <BridgePanel />
+      <section className="panel">
         <div className="panel-title flex justify-between">Capability report <StatusPill tone="demo">{mode}</StatusPill></div>
         <ul className="divide-y text-sm">
           {checks.map(([k, v]) => (
@@ -34,10 +34,10 @@ function Diagnostics() {
           ))}
         </ul>
         <div className="flex gap-2 border-t p-4">
-          <button className="btn btn-neutral" disabled title="Available once the local bridge is implemented">Test connection</button>
-          <button className="btn btn-neutral" disabled title="Available once the local bridge is implemented">Run capability check</button>
+          <button className="btn btn-neutral" disabled title="Recording/plugin capability checks arrive in Phase 3">Run capability check</button>
         </div>
       </section>
+      </div>
       <section className="col-span-5 flex flex-col gap-4">
         <div className="panel">
           <div className="panel-title">Camera source mapping</div>

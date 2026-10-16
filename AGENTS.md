@@ -13,3 +13,5 @@
 - Domain logic (incident lifecycle, validation, shortcuts) lives in src/domain as pure functions — keeps it unit-testable and UI-independent.
 - App state is a local-first store in src/lib/store.ts persisted to localStorage — the replay workflow must work offline.
 - Never show OBS/camera/replay status as real unless verified by the (future) local bridge; simulated values are labeled "sim"/DEMO — evidence integrity.
+- The OBS connection lives only in local-vsr-bridge/ (separate Node project, run on the OBS PC); the browser talks to it via src/lib/bridge.ts with a pairing token — the OBS password must never reach the browser.
+- An OBS connection never enables replay; replay readiness requires a later, verified ReplayAdapter.

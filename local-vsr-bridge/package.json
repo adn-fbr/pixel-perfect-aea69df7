@@ -1,0 +1,26 @@
+{
+  "name": "local-vsr-bridge",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Local bridge between the VSR Futsal operator UI and OBS Studio WebSocket. Runs on the OBS Windows PC only.",
+  "engines": { "node": ">=20.11" },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest run --exclude tests/**/*.hardware.test.ts",
+    "test:hardware": "vitest run tests/obs.hardware.test.ts"
+  },
+  "dependencies": {
+    "fastify": "5.6.1",
+    "obs-websocket-js": "5.0.6",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.6",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
