@@ -34,8 +34,10 @@ function Dashboard() {
         <div className="panel-title">System status</div>
         <div className="grid grid-cols-2 gap-px bg-border">
           <Row k="Integration mode"><StatusPill tone="demo">{s.mode}</StatusPill></Row>
-          <Row k="OBS WebSocket"><StatusPill tone="off">Not connected — bridge not built</StatusPill></Row>
-          <Row k="Replay engine"><StatusPill tone="demo">Simulated only</StatusPill></Row>
+          <Row k="OBS WebSocket">{s.mode === "DEMO" ? <StatusPill tone="off">Not connected (demo)</StatusPill>
+            : s.bridge.obsState === "OBS_CONNECTED" ? <StatusPill tone="ok">Connected · OBS {s.bridge.obsVersion?.obsVersion ?? "?"}</StatusPill>
+            : <StatusPill tone="live">{s.bridge.obsState ?? "Bridge unreachable"}</StatusPill>}</Row>
+          <Row k="Replay engine">{s.mode === "DEMO" ? <StatusPill tone="demo">Simulated only</StatusPill> : <StatusPill tone="warn">Not verified</StatusPill>}</Row>
           <Row k="Storage"><StatusPill tone="off">Unverifiable without bridge</StatusPill></Row>
         </div>
         <table className="w-full text-sm">

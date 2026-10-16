@@ -6,6 +6,7 @@ import {
   selectCamera, setPlayback, useAppState, audit,
 } from "@/lib/store";
 import { StatusPill } from "./Status";
+import { pollStatus } from "@/lib/bridgeActions";
 
 const nav = [
   { to: "/", label: "Operations" },
@@ -22,6 +23,11 @@ export function AppShell() {
   const [toast, setToast] = useState<{ text: string; tone: "ok" | "warn" | "live" } | null>(null);
 
   useEffect(() => { hydrateStore(); }, []);
+  useEffect(() => {
+    if (mode === "DEMO" || mode === "CONNECTING") return;
+    const id = window.setInterval(() => { void pollStatus(); }, 5000);
+    return () => window.clearInterval(id);
+  }, [mode]);
 
   useEffect(() => {
     const flash = (text: string, tone: "ok" | "warn" | "live") => {
@@ -75,7 +81,7 @@ export function AppShell() {
         </nav>
         <div className="ml-auto flex items-center gap-3 text-sm">
           <span className="text-muted-foreground">{match.homeTeam} <b className="font-mono text-foreground">{match.homeScore}–{match.awayScore}</b> {match.awayTeam} · P{match.period}</span>
-          {mode === "DEMO" ? <StatusPill tone="demo">Demo mode — simulated</StatusPill> : <StatusPill tone="ok">{mode}</StatusPill>}
+          <ModePill mode={mode} />
         </div>
       </header>
       <main className="flex-1 p-5"><Outlet /></main>
@@ -84,4 +90,12 @@ export function AppShell() {
       )}
     </div>
   );
+}
+
+function ModePill({ mode }: { mode: string }) {
+  if (mode === "DEMO") return <StatusPill tone="demo">Demo mode — simulated</StatusPill>;
+  if (mode === "OBS_CONNECTED") return <StatusPill tone="ok">OBS connected · replay unverified</StatusPill>;
+  if (mode === "CONNECTING") return <StatusPill tone="warn">Connecting…</StatusPill>;
+  if (mode === "DEGRADED") return <StatusPill tone="warn">Degraded</StatusPill>;
+  return <StatusPill tone="live">OBS disconnected</StatusPill>;
 }
