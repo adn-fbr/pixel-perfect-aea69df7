@@ -1,3 +1,5 @@
+import type { MatchClock } from "./clock";
+
 export type IntegrationMode = "DEMO" | "CONNECTING" | "OBS_CONNECTED" | "REPLAY_READY" | "DISCONNECTED";
 export type DiscoveryStatus = "IDLE" | "REFRESHING" | "READY" | "ERROR";
 
@@ -38,6 +40,7 @@ export interface MatchConfig {
   postRollSec: number;
   operatorName: string;
   status: MatchStatus;
+  clock: MatchClock;
 }
 
 export interface FootageRange {
