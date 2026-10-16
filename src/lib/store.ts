@@ -195,6 +195,7 @@ export function updateIncidentNotes(id: string, notes: string) {
 export function setActiveIncident(id: string) { set({ activeIncidentId: id }); }
 
 export function replayAvailable(): { ok: boolean; reason?: string } {
+  if (state.mode !== "DEMO") return { ok: false, reason: "Replay capability not verified (Phase 2 connects to OBS only)" };
   const inc = state.incidents.find((i) => i.id === state.activeIncidentId);
   if (!inc) return { ok: false, reason: "No incident selected" };
   if (!["READY", "UNDER_REVIEW"].includes(inc.status)) return { ok: false, reason: `Incident is ${inc.status}, not READY` };
