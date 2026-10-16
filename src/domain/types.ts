@@ -1,4 +1,4 @@
-export type IntegrationMode = "DEMO" | "OBS_CONNECTED" | "REPLAY_READY" | "DEGRADED" | "DISCONNECTED";
+export type IntegrationMode = "DEMO" | "CONNECTING" | "OBS_CONNECTED" | "REPLAY_READY" | "DEGRADED" | "DISCONNECTED";
 
 export type IncidentStatus = "MARKED" | "CAPTURING" | "READY" | "UNDER_REVIEW" | "COMPLETED" | "FAILED";
 
@@ -79,3 +79,15 @@ export interface AuditEntry {
 
 export type PlaybackState = "LIVE" | "PAUSED" | "PLAYING";
 export type ReplaySpeed = 0.25 | 0.5 | 1 | 2;
+
+export interface BridgeInfo {
+  url: string;
+  bridgeVersion: string | null;
+  obsState: string | null;
+  obsVersion: { obsVersion: string; obsWebSocketVersion: string; platformDescription: string } | null;
+  scenes: { name: string; index: number }[];
+  currentScene: string | null;
+  sources: { name: string; kind: string }[];
+  lastError: { code: string; message: string; at: string } | null;
+  lastCheckedAt: string | null;
+}

@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { newIncidentId, transitionIncident } from "@/domain/incident";
 import type {
-  AuditEntry, CameraConfig, CameraId, CameraStatus, Incident, IntegrationMode,
+  AuditEntry, BridgeInfo, CameraConfig, CameraId, CameraStatus, Incident, IntegrationMode,
   MatchConfig, PlaybackState, ReplaySpeed,
 } from "@/domain/types";
 
@@ -15,6 +15,7 @@ export interface AppState {
   selectedCamera: CameraId;
   activeIncidentId: string | null;
   playback: { state: PlaybackState; positionSec: number; speed: ReplaySpeed };
+  bridge: BridgeInfo;
 }
 
 const STORAGE_KEY = "vsr-state-v1";
@@ -51,7 +52,13 @@ const initial: AppState = {
   selectedCamera: "cam1",
   activeIncidentId: null,
   playback: { state: "LIVE", positionSec: 0, speed: 1 },
+  bridge: {
+    url: "http://127.0.0.1:4466", bridgeVersion: null, obsState: null, obsVersion: null,
+    scenes: [], currentScene: null, sources: [], lastError: null, lastCheckedAt: null,
+  },
 };
+
+export const DEMO_CAMERA_STATUS = initial.cameraStatus;
 
 let state: AppState = initial;
 const listeners = new Set<() => void>();
@@ -69,7 +76,12 @@ export function hydrateStore() {
   hydrated = true;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) state = { ...initial, ...JSON.parse(raw), mode: "DEMO" };
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<AppState>;
+      // Connection state is never restored from storage: always start in DEMO.
+      state = { ...initial, ...saved, mode: "DEMO", cameraStatus: initial.cameraStatus,
+        bridge: { ...initial.bridge, url: saved.bridge?.url ?? initial.bridge.url } };
+    }
   } catch { /* corrupted state: keep defaults */ }
   emit();
 }
@@ -195,3 +207,15 @@ export function deleteAllIncidents() {
   set({ incidents: [], activeIncidentId: null });
   audit("DELETE_INCIDENTS", "COMPLETED", "All incident metadata cleared (no video files touched)");
 }
+
+export function setMode(mode: IntegrationMode) {
+  if (state.mode === mode) return;
+  // Leaving DEMO: simulated camera health is replaced by "unknown" — not verified in Phase 2.
+  const cameraStatus = mode === "DEMO"
+    ? initial.cameraStatus
+    : state.cameraStatus.map((c) => ({ ...c, connected: null, recording: null, bufferReady: null, simulated: false }));
+  set({ mode, cameraStatus, ...(mode !== "DEMO" ? { playback: { ...state.playback, state: "LIVE" as const, positionSec: 0 } } : {}) });
+  audit("MODE", "COMPLETED", mode);
+}
+
+export function updateBridge(patch: Partial<BridgeInfo>) { set({ bridge: { ...state.bridge, ...patch } }); }
