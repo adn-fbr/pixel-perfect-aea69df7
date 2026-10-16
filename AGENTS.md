@@ -8,3 +8,8 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+## Architecture rules
+- Domain logic (incident lifecycle, validation, shortcuts) lives in src/domain as pure functions — keeps it unit-testable and UI-independent.
+- App state is a local-first store in src/lib/store.ts persisted to localStorage — the replay workflow must work offline.
+- Never show OBS/camera/replay status as real unless verified by the (future) local bridge; simulated values are labeled "sim"/DEMO — evidence integrity.
