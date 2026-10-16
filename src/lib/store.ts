@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { DEFAULT_CLOCK, elapsedMs, formatClock, pauseClock, resetClock, startClock } from "@/domain/clock";
 import { newIncidentId, transitionIncident } from "@/domain/incident";
 import type {
   AuditEntry, BridgeInfo, CameraConfig, CameraId, CameraStatus, Incident, IntegrationMode,
@@ -38,6 +39,7 @@ const initial: AppState = {
     postRollSec: 10,
     operatorName: "",
     status: "DRAFT",
+    clock: DEFAULT_CLOCK,
   },
   cameras: [
     { id: "cam1", label: "Main / Halfway", obsSourceName: "USB Cam 1" },
@@ -80,7 +82,8 @@ export function hydrateStore() {
     if (raw) {
       const saved = JSON.parse(raw) as Partial<AppState>;
       // Connection state is never restored from storage: always start in DEMO.
-      state = { ...initial, ...saved, mode: "DEMO", cameraStatus: initial.cameraStatus,
+      state = { ...initial, ...saved, mode: "DEMO",
+        match: { ...initial.match, ...saved.match, clock: { ...DEFAULT_CLOCK, ...saved.match?.clock } }, cameraStatus: initial.cameraStatus,
         bridge: { ...initial.bridge, url: saved.bridge?.url ?? initial.bridge.url } };
     }
   } catch { /* corrupted state: keep defaults */ }
@@ -129,7 +132,7 @@ export function markIncident(label = "Incident"): Incident {
     matchId: state.match.id,
     label,
     period: state.match.period,
-    matchClock: null,
+    matchClock: formatClock(elapsedMs(state.match.clock, now.getTime())),
     wallClockIso: iso,
     cameraId: state.selectedCamera,
     recording: null,
@@ -221,3 +224,13 @@ export function setMode(mode: IntegrationMode) {
 }
 
 export function updateBridge(patch: Partial<BridgeInfo>) { set({ bridge: { ...state.bridge, ...patch } }); }
+
+export function clockStart() { updateMatch({ clock: startClock(state.match.clock, Date.now()) }); audit("CLOCK_START", "COMPLETED", `P${state.match.period}`); }
+export function clockPause() { updateMatch({ clock: pauseClock(state.match.clock, Date.now()) }); audit("CLOCK_PAUSE", "COMPLETED", formatClock(state.match.clock.accumulatedMs)); }
+export function clockReset() { updateMatch({ clock: resetClock(state.match.clock) }); audit("CLOCK_RESET", "COMPLETED", `P${state.match.period}`); }
+export function changePeriod(delta: 1 | -1) {
+  const period = Math.max(1, state.match.period + delta);
+  if (period === state.match.period) return;
+  updateMatch({ period, clock: resetClock(state.match.clock) });
+  audit("PERIOD", "COMPLETED", `Period ${period} (clock reset)`);
+}

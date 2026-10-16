@@ -57,3 +57,20 @@ describe("shortcuts", () => {
     expect(resolveShortcut("1", document.createElement("input"))).toBeNull();
   });
 });
+
+import { DEFAULT_CLOCK, elapsedMs, formatClock, pauseClock, resetClock, startClock } from "@/domain/clock";
+describe("match clock", () => {
+  it("accumulates across start/pause", () => {
+    let c = startClock(DEFAULT_CLOCK, 1000);
+    c = pauseClock(c, 6000);
+    c = startClock(c, 10000);
+    expect(elapsedMs(c, 13000)).toBe(8000);
+  });
+  it("does not advance while paused", () => {
+    const c = pauseClock(startClock(DEFAULT_CLOCK, 0), 5000);
+    expect(elapsedMs(c, 99999)).toBe(5000);
+  });
+  it("reset returns to 00:00", () => {
+    expect(formatClock(elapsedMs(resetClock(startClock(DEFAULT_CLOCK, 0)), 5000))).toBe("00:00");
+  });
+});
