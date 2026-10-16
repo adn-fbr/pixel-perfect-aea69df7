@@ -44,7 +44,7 @@ function Dashboard() {
           </thead>
           <tbody>
             {s.cameras.map((c, i) => {
-              const st = s.cameraStatus[i];
+              const st = s.cameraStatus[i]!;
               return (
                 <tr key={c.id} className="border-t">
                   <td className="px-4 py-2 font-semibold">{i + 1}. {c.label}</td>

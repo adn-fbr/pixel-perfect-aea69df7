@@ -105,7 +105,7 @@ export function selectCamera(id: CameraId) {
 export function cycleCamera(dir: 1 | -1) {
   const ids: CameraId[] = ["cam1", "cam2", "cam3"];
   const i = ids.indexOf(state.selectedCamera);
-  selectCamera(ids[(i + dir + 3) % 3]);
+  selectCamera(ids[(i + dir + 3) % 3]!);
 }
 
 export function markIncident(label = "Incident"): Incident {

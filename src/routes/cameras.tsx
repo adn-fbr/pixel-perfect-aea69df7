@@ -28,8 +28,8 @@ function Cameras() {
           </div>
           <div className="flex flex-wrap gap-2 px-4 py-3">
             <span className="mr-auto font-mono text-xs text-muted-foreground">src: {c.obsSourceName}</span>
-            {triState(status[i].connected, "Online", "Offline", status[i].simulated)}
-            {triState(status[i].recording, "Rec", "Stopped", status[i].simulated)}
+            {triState(status[i]!.connected, "Online", "Offline", status[i]!.simulated)}
+            {triState(status[i]!.recording, "Rec", "Stopped", status[i]!.simulated)}
           </div>
         </button>
       ))}

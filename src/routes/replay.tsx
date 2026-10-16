@@ -27,7 +27,7 @@ function Replay() {
     <div className="grid grid-cols-12 gap-4">
       <section className="panel col-span-8">
         <div className="panel-title flex justify-between">
-          <span>Review — CAM {camIdx + 1} · {s.cameras[camIdx].label}</span>
+          <span>Review — CAM {camIdx + 1} · {s.cameras[camIdx]?.label}</span>
           <StatusPill tone={pb.state === "LIVE" ? "live" : "demo"}>{pb.state === "LIVE" ? "Live" : `${pb.state} (simulated)`}</StatusPill>
         </div>
         <div className="flex aspect-video flex-col items-center justify-center gap-2 bg-video">
