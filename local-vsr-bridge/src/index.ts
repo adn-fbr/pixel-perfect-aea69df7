@@ -3,6 +3,7 @@ import OBSWebSocket from "obs-websocket-js";
 import { loadConfig } from "./config/config.js";
 import { ObsWebSocketAdapter, type ObsClient } from "./obs/ObsWebSocketAdapter.js";
 import { buildApp, BRIDGE_VERSION } from "./server/app.js";
+import { startupLogMessages } from "./startupLog.js";
 
 /** Minimal .env loader (no extra dependency). Real env vars win. */
 function loadDotEnv(path = ".env") {
@@ -40,15 +41,7 @@ async function main() {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
   await app.listen({ host: config.host, port: config.port });
-  console.log(`\nLocal VSR Bridge v${BRIDGE_VERSION} listening on http://${config.host}:${config.port}`);
-  console.log(`OBS WebSocket target: configured (password ${config.obsPassword ? "set" : "NOT set"})`);
-  console.log(`Allowed origins: ${config.allowedOrigins.join(", ")}`);
-  if (config.pairingTokenGenerated) {
-    console.log(`\nPairing token (paste into Diagnostics, valid until the bridge stops):\n  ${config.pairingToken}\n`);
-  } else {
-    console.log("Pairing token: using BRIDGE_PAIRING_TOKEN from .env");
-  }
-  console.log("Not connected to OBS yet. Press 'Connect to OBS' in the Diagnostics screen. Ctrl+C to stop.");
+  for (const message of startupLogMessages(config)) console.log(message);
 }
 
 void main();

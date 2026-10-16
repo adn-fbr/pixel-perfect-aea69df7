@@ -60,9 +60,8 @@ hardware evidence.
   category, not raw exception messages. User-facing adapter errors use fixed
   messages. Regression coverage is present but has not been executed in this
   environment; this does not establish universal secret safety for every
-  dependency or runtime logging path. The startup log no longer prints the
-  OBS WebSocket URL. The generated pairing token is still printed
-  intentionally at startup for the operator to pair the browser session.
+  dependency or runtime logging path. Startup logs do not print the OBS
+  WebSocket URL, pairing token, or OBS password.
 - Discovery progress/errors now live in a separate `discoveryStatus` field.
   Discovery failures do not change OBS transport mode, and request generations
   prevent older refreshes or results arriving after a disconnect from
@@ -106,9 +105,9 @@ hardware evidence.
   `ws://127.0.0.1:4455`).
 - Bind only to `127.0.0.1`, `localhost`, or `::1`. Non-loopback bridge binds
   are rejected. Do not use port forwarding, tunnels, or firewall exposure.
-- The OBS password stays on the OBS PC. The browser receives only a pairing
-  token, stored in `sessionStorage`; the bridge prints a generated token on
-  startup so the operator can pair the UI.
+- The OBS password stays on the OBS PC. Configure `BRIDGE_PAIRING_TOKEN`
+  explicitly with at least 24 characters. The browser receives only this
+  pairing token, stored in `sessionStorage`; the bridge never prints it.
 - The pairing token authenticates OBS API routes; CORS is not authentication.
   Host and origin checks are separate protections.
 - The browser client accepts only HTTP loopback bridge URLs. Hosted HTTPS
@@ -131,8 +130,9 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-Set `OBS_WS_PASSWORD` to the OBS WebSocket password and `BRIDGE_ALLOWED_ORIGINS`
-to the exact browser origin(s). Keep `BRIDGE_HOST=127.0.0.1`. Never commit or
+Set `OBS_WS_PASSWORD` to the OBS WebSocket password, `BRIDGE_PAIRING_TOKEN` to
+a private value of at least 24 characters, and `BRIDGE_ALLOWED_ORIGINS` to
+the exact browser origin(s). Keep `BRIDGE_HOST=127.0.0.1`. Never commit or
 share `.env`. The bridge does not change OBS settings or install a Windows
 service.
 
@@ -144,8 +144,9 @@ npm run start
 ```
 
 For development only, `npm run dev` runs the TypeScript entry point with
-watch/restart. The bridge prints a pairing token at startup when
-`BRIDGE_PAIRING_TOKEN` is unset. Enter it in the VSR Diagnostics panel.
+watch/restart. Startup fails safely if `BRIDGE_PAIRING_TOKEN` is missing or
+shorter than 24 characters. Enter the configured token manually in the VSR
+Diagnostics panel; it is not printed by the bridge.
 
 ## Commands and result interpretation
 

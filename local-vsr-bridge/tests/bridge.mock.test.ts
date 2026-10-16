@@ -8,6 +8,7 @@ import { ObsWebSocketAdapter, type ObsClient } from "../src/obs/ObsWebSocketAdap
 import { buildApp } from "../src/server/app.js";
 import { redact } from "../src/diagnostics/redact.js";
 import { isAllowedHost } from "../src/security/guards.js";
+import { startupLogMessages } from "../src/startupLog.js";
 
 const TOKEN = "t".repeat(32);
 const PASSWORD = "super-secret-obs-pw";
@@ -72,6 +73,19 @@ function setup(behaviors: Array<"ok" | "badpw" | "refused" | "hang" | "deferred-
 }
 
 describe("[mock] config validation", () => {
+  it("requires an explicit pairing token and reports missing configuration safely", () => {
+    const r = loadConfig({});
+    expect(r).toEqual({ ok: false, errors: ["BRIDGE_PAIRING_TOKEN: must be configured"] });
+  });
+  it("rejects short and whitespace-only pairing tokens without echoing them", () => {
+    const shortToken = "synthetic-short";
+    const short = loadConfig({ BRIDGE_PAIRING_TOKEN: shortToken });
+    const blank = loadConfig({ BRIDGE_PAIRING_TOKEN: "   " });
+    expect(short.ok).toBe(false);
+    expect(blank.ok).toBe(false);
+    expect(JSON.stringify(short)).not.toContain(shortToken);
+    expect(JSON.stringify(blank)).not.toContain("   ");
+  });
   it("rejects a non-loopback bind address", () => {
     expect(loadConfig({ BRIDGE_HOST: "0.0.0.0" }).ok).toBe(false);
   });
@@ -79,28 +93,50 @@ describe("[mock] config validation", () => {
     expect(loadConfig({ BRIDGE_ALLOWED_ORIGINS: "*" }).ok).toBe(false);
     expect(loadConfig({ BRIDGE_PAIRING_TOKEN: "short" }).ok).toBe(false);
   });
-  it("defaults to 127.0.0.1:4466 and OBS port 4455, generating a token", () => {
-    const r = loadConfig({});
+  it("defaults to 127.0.0.1:4466 and OBS port 4455 when pairing is configured", () => {
+    const r = loadConfig({ BRIDGE_PAIRING_TOKEN: TOKEN });
     expect(r.ok && r.config.host).toBe("127.0.0.1");
     expect(r.ok && r.config.port).toBe(4466);
     expect(r.ok && r.config.obsUrl).toBe("ws://127.0.0.1:4455");
-    expect(r.ok && r.config.pairingTokenGenerated).toBe(true);
+    expect(r.ok && r.config.pairingToken).toBe(TOKEN);
+  });
+  it("startup messages never include pairing or OBS password values", () => {
+    const r = loadConfig({ BRIDGE_PAIRING_TOKEN: TOKEN, OBS_WS_PASSWORD: PASSWORD });
+    if (!r.ok) throw new Error("Synthetic test configuration rejected");
+    const output = startupLogMessages(r.config).join("\n");
+    expect(output).toContain("Pairing token is configured");
+    expect(output).not.toContain(TOKEN);
+    expect(output).not.toContain(PASSWORD);
   });
 });
 
 describe("[mock] health & security", () => {
-  it("health reports bridge only, never OBS connectivity", async () => {
-    const { app } = setup();
-    const r = await app.inject({ url: "/api/health", headers: { host: "127.0.0.1:4466" } });
+  it("health reports bridge only and does not reveal configured secrets", async () => {
+    const { app, H } = setup();
+    const r = await app.inject({ url: "/api/health", headers: H });
     expect(r.statusCode).toBe(200);
     expect(r.json().data.bridge).toBe("BRIDGE_READY");
     expect(JSON.stringify(r.json())).not.toContain("OBS_CONNECTED");
+    expect(r.body).not.toContain(TOKEN);
+    expect(r.body).not.toContain(PASSWORD);
   });
   it("rejects requests without the pairing token", async () => {
     const { app } = setup();
     const r = await app.inject({ method: "POST", url: "/api/obs/connect", headers: { host: "127.0.0.1:4466" } });
     expect(r.statusCode).toBe(401);
     expect(r.json().errorCode).toBe("UNAUTHORIZED");
+  });
+  it("rejects requests with an incorrect pairing token", async () => {
+    const { app, H } = setup();
+    const r = await app.inject({ url: "/api/obs/status", headers: { ...H, "x-vsr-token": "x".repeat(32) } });
+    expect(r.statusCode).toBe(401);
+    expect(r.json().errorCode).toBe("UNAUTHORIZED");
+  });
+  it("allows a valid token through the private-route guard", async () => {
+    const { app, H } = setup();
+    const r = await app.inject({ url: "/api/obs/status", headers: H });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().data.state).toBe("BRIDGE_READY");
   });
   it("rejects unexpected Host headers (DNS rebinding)", async () => {
     expect(isAllowedHost("evil.example:4466", 4466)).toBe(false);
@@ -113,6 +149,15 @@ describe("[mock] health & security", () => {
     const r = await app.inject({ url: "/api/obs/status", headers: { ...H, origin: "https://evil.example" } });
     expect(r.statusCode).toBe(403);
     expect(r.json().errorCode).toBe("FORBIDDEN_ORIGIN");
+  });
+  it("returns CORS headers only for an allowlisted origin", async () => {
+    const { app, H } = setup();
+    const allowed = await app.inject({ url: "/api/health", headers: { ...H, origin: "http://localhost:8080" } });
+    const denied = await app.inject({ url: "/api/health", headers: { ...H, origin: "https://evil.example" } });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.headers["access-control-allow-origin"]).toBe("http://localhost:8080");
+    expect(denied.statusCode).toBe(403);
+    expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
   });
   it("rejects request bodies with unexpected fields", async () => {
     const { app, H } = setup();

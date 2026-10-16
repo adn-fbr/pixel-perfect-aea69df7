@@ -2,13 +2,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeResponse } from "@/lib/bridge";
 
+const tokenStore = vi.hoisted(() => ({ value: "" }));
 const { bridgeCallMock } = vi.hoisted(() => ({ bridgeCallMock: vi.fn() }));
 
 vi.mock("@/lib/bridge", () => ({
   bridgeCall: bridgeCallMock,
-  getToken: () => "",
+  getToken: () => tokenStore.value,
   isLoopbackUrl: () => true,
-  setToken: () => {},
+  setToken: (token: string) => { tokenStore.value = token; return true; },
 }));
 
 import { BridgePanel } from "@/components/vsr/BridgePanel";
@@ -42,10 +43,38 @@ function connected() {
 afterEach(cleanup);
 beforeEach(() => {
   bridgeCallMock.mockReset();
+  tokenStore.value = "";
   connected();
 });
 
 describe("bridge discovery state", () => {
+  it("clears the manual token field after saving while retaining session pairing", async () => {
+    bridgeCallMock.mockImplementation((_url: string, path: string) => {
+      if (path === "/api/health") return Promise.resolve(response({ bridgeVersion: "0.2.0" }));
+      if (path === "/api/obs/connect") return Promise.resolve(response({
+        obsVersion: "32.2.2", obsWebSocketVersion: "5.6.3", platformDescription: "Windows 11",
+      }));
+      if (path === "/api/obs/scenes") return Promise.resolve(response({ current: "Main", scenes: [{ name: "Main", index: 0 }] }));
+      if (path === "/api/obs/sources") return Promise.resolve(response([]));
+      throw new Error(`Unexpected bridge route: ${path}`);
+    });
+
+    render(<BridgePanel />);
+    const field = screen.getByLabelText("Pairing token");
+    fireEvent.change(field, { target: { value: "synthetic-pairing-token-123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save pairing token" }));
+
+    expect(field).toHaveValue("");
+    expect(tokenStore.value).toBe("synthetic-pairing-token-123456");
+    expect(screen.getByRole("button", { name: "Reconnect" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+    await waitFor(() => expect(getState().mode).toBe("OBS_CONNECTED"));
+    expect(bridgeCallMock.mock.calls.map(([, path]) => path)).toEqual([
+      "/api/health", "/api/obs/connect", "/api/obs/scenes", "/api/obs/sources",
+    ]);
+  });
+
   it("clears a discovery error after a successful refresh without degrading OBS connection state", async () => {
     bridgeCallMock
       .mockResolvedValueOnce(response({ current: "Main", scenes: [{ name: "Main", index: 0 }] }))

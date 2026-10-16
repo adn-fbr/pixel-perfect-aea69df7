@@ -16,8 +16,13 @@ const TOKEN_KEY = "vsr-bridge-token";
 export function getToken(): string {
   try { return sessionStorage.getItem(TOKEN_KEY) ?? ""; } catch { return ""; }
 }
-export function setToken(t: string) {
-  try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+export function setToken(t: string): boolean {
+  try {
+    t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function isLoopbackUrl(url: string): boolean {

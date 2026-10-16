@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { getToken, isLoopbackUrl, setToken } from "@/lib/bridge";
 import { connectToObs, disconnectObs, refreshDiscovery, returnToDemo } from "@/lib/bridgeActions";
 import { updateBridge, useAppState } from "@/lib/store";
@@ -9,11 +9,23 @@ export function BridgePanel() {
   const b = useAppState((s) => s.bridge);
   const cams = useAppState((s) => s.cameras);
   const [token, setTok] = useState("");
+  const [tokenSaved, setTokenSaved] = useState(() => Boolean(getToken()));
+  const [tokenSaveError, setTokenSaveError] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
-  useEffect(() => setTok(getToken()), []);
   const urlOk = isLoopbackUrl(b.url);
   const busy = mode === "CONNECTING";
   const live = mode !== "DEMO";
+
+  function savePairingToken() {
+    const value = token.trim();
+    if (value && setToken(value)) {
+      setTok("");
+      setTokenSaved(true);
+      setTokenSaveError(false);
+    } else {
+      setTokenSaveError(true);
+    }
+  }
 
   async function handleDisconnect() {
     setDisconnecting(true);
@@ -37,13 +49,15 @@ export function BridgePanel() {
           <input className="field font-mono" value={b.url} onChange={(e) => updateBridge({ url: e.target.value.trim() })} />
           {!urlOk && <span className="text-xs text-live">Must be http://127.0.0.1:port or http://localhost:port</span>}
         </label>
-        <label className="grid gap-1 text-sm"><span className="text-muted-foreground">Pairing token (shown in the bridge window)</span>
+        <label className="grid gap-1 text-sm"><span className="text-muted-foreground">Pairing token</span>
           <input className="field font-mono" type="password" autoComplete="off" value={token}
-            onChange={(e) => { setTok(e.target.value); setToken(e.target.value.trim()); }} />
+            onChange={(e) => { setTok(e.target.value); setTokenSaved(false); setTokenSaveError(false); }} />
+          {tokenSaveError && <span className="text-xs text-live" role="alert">Could not save the pairing token in this browser session.</span>}
         </label>
         <div className="col-span-2 flex flex-wrap gap-2">
-          <button className="btn btn-ok" disabled={busy || !urlOk || !token} onClick={() => void connectToObs()}
-            title={!token ? "Enter the pairing token first" : undefined}>{busy ? "Connecting…" : live ? "Reconnect" : "Connect to OBS"}</button>
+          <button className="btn btn-neutral" disabled={!token.trim()} onClick={savePairingToken}>Save pairing token</button>
+          <button className="btn btn-ok" disabled={busy || !urlOk || !tokenSaved} onClick={() => void connectToObs()}
+            title={!tokenSaved ? "Save the pairing token first" : undefined}>{busy ? "Connecting…" : live ? "Reconnect" : "Connect to OBS"}</button>
           <button className="btn btn-neutral" disabled={!live || busy} onClick={() => void refreshDiscovery()}>Refresh scenes & sources</button>
           <button className="btn btn-neutral" disabled={!live || disconnecting} onClick={() => void handleDisconnect()}>
             {disconnecting ? "Disconnecting…" : "Disconnect"}
@@ -88,7 +102,7 @@ export function BridgePanel() {
       )}
       {!live && (
         <p className="border-t p-4 text-xs text-muted-foreground">
-          Start the bridge on the OBS PC: open <span className="kbd">local-vsr-bridge</span>, run <span className="kbd">npm run start</span>, then copy the pairing token it prints. See local-vsr-bridge/README.md.
+          Start the bridge on the OBS PC: open <span className="kbd">local-vsr-bridge</span>, run <span className="kbd">npm run start</span>, then enter the configured pairing token here. See local-vsr-bridge/README.md.
         </p>
       )}
     </section>

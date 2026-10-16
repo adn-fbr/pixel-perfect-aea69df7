@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
 const LOOPBACK = ["127.0.0.1", "localhost", "::1"];
@@ -18,8 +17,7 @@ const schema = z.object({
   BRIDGE_PAIRING_TOKEN: z
     .string()
     .optional()
-    .transform((t) => (t && t.trim() ? t.trim() : undefined))
-    .refine((t) => t === undefined || t.length >= 24, { message: "BRIDGE_PAIRING_TOKEN must be at least 24 characters" }),
+    .transform((t) => t?.trim()),
   OBS_WS_URL: z
     .string()
     .default("ws://127.0.0.1:4455")
@@ -37,7 +35,6 @@ export interface BridgeConfig {
   port: number;
   allowedOrigins: string[];
   pairingToken: string;
-  pairingTokenGenerated: boolean;
   obsUrl: string;
   obsPassword: string;
   obsConnectTimeoutMs: number;
@@ -47,20 +44,33 @@ export interface BridgeConfig {
 export type ConfigResult = { ok: true; config: BridgeConfig } | { ok: false; errors: string[] };
 
 export function loadConfig(env: Record<string, string | undefined>): ConfigResult {
+  const pairingToken = env.BRIDGE_PAIRING_TOKEN?.trim();
+  if (!pairingToken) {
+    return { ok: false, errors: ["BRIDGE_PAIRING_TOKEN: must be configured"] };
+  }
+  if (pairingToken.length < 24) {
+    return { ok: false, errors: ["BRIDGE_PAIRING_TOKEN: invalid configuration"] };
+  }
+
   const parsed = schema.safeParse(env);
   if (!parsed.success) {
-    return { ok: false, errors: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) };
+    return {
+      ok: false,
+      errors: parsed.error.issues.map((i) =>
+        i.path[0] === "BRIDGE_PAIRING_TOKEN"
+          ? "BRIDGE_PAIRING_TOKEN: invalid configuration"
+          : `${i.path.join(".")}: ${i.message}`,
+      ),
+    };
   }
   const e = parsed.data;
-  const generated = !e.BRIDGE_PAIRING_TOKEN;
   return {
     ok: true,
     config: {
       host: e.BRIDGE_HOST,
       port: e.BRIDGE_PORT,
       allowedOrigins: e.BRIDGE_ALLOWED_ORIGINS,
-      pairingToken: e.BRIDGE_PAIRING_TOKEN ?? randomBytes(24).toString("base64url"),
-      pairingTokenGenerated: generated,
+      pairingToken,
       obsUrl: e.OBS_WS_URL,
       obsPassword: e.OBS_WS_PASSWORD,
       obsConnectTimeoutMs: e.OBS_CONNECT_TIMEOUT_MS,
