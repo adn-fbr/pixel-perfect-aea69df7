@@ -99,7 +99,7 @@ function Replay() {
   );
 }
 
-function Ctl({ children, k, disabled, why, onClick }: { children: React.ReactNode; k: string; disabled: boolean; why?: string; onClick: () => void }) {
+function Ctl({ children, k, disabled, why, onClick }: { children: React.ReactNode; k: string; disabled: boolean; why?: string | undefined; onClick: () => void }) {
   return (
     <button className="btn btn-neutral flex-col py-3" disabled={disabled} title={disabled ? why : undefined} onClick={onClick}>
       {children}<span className="kbd">{k}</span>

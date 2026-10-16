@@ -2,7 +2,7 @@ import { Link, Outlet } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { resolveShortcut } from "@/domain/shortcuts";
 import {
-  cycleCamera, getState, hydrateStore, markIncident, replayAvailable, saveIncident,
+  getState, hydrateStore, markIncident, replayAvailable, saveIncident,
   selectCamera, setPlayback, useAppState, audit,
 } from "@/lib/store";
 import { StatusPill } from "./Status";
@@ -59,7 +59,7 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  void cycleCamera;
+
 
   return (
     <div className="flex min-h-screen flex-col">
