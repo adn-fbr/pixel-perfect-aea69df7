@@ -64,7 +64,7 @@ export function BridgePanel() {
               return <li key={s.name} className="flex justify-between font-mono text-xs"><span>{s.name} <span className="text-muted-foreground">({s.kind})</span></span>{mapped && <span className="text-demo">→ {mapped.label}</span>}</li>;
             })}</ul>
             <p className="mt-2 text-xs text-muted-foreground">Found in OBS only. This does not confirm the physical camera is working.</p>
-            {cams.filter((c) => !b.sources.some((s) => s.name === c.obsSourceName)).map((c) => (
+            {b.obsState === "OBS_CONNECTED" && cams.filter((c) => !b.sources.some((s) => s.name === c.obsSourceName)).map((c) => (
               <p key={c.id} className="mt-1 text-xs text-warn">! "{c.obsSourceName}" ({c.label}) not found in OBS</p>
             ))}
           </div>
