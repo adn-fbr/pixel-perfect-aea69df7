@@ -96,6 +96,5 @@ function ModePill({ mode }: { mode: string }) {
   if (mode === "DEMO") return <StatusPill tone="demo">Demo mode — simulated</StatusPill>;
   if (mode === "OBS_CONNECTED") return <StatusPill tone="ok">OBS connected · replay unverified</StatusPill>;
   if (mode === "CONNECTING") return <StatusPill tone="warn">Connecting…</StatusPill>;
-  if (mode === "DEGRADED") return <StatusPill tone="warn">Degraded</StatusPill>;
   return <StatusPill tone="live">OBS disconnected</StatusPill>;
 }

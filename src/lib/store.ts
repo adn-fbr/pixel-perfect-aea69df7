@@ -54,7 +54,8 @@ const initial: AppState = {
   playback: { state: "LIVE", positionSec: 0, speed: 1 },
   bridge: {
     url: "http://127.0.0.1:4466", bridgeVersion: null, obsState: null, obsVersion: null,
-    scenes: [], currentScene: null, sources: [], lastError: null, lastCheckedAt: null,
+    scenes: [], currentScene: null, sources: [], discoveryStatus: "IDLE", discoveryError: null,
+    lastError: null, lastCheckedAt: null,
   },
 };
 

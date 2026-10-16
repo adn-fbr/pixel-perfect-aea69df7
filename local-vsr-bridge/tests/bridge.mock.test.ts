@@ -20,10 +20,13 @@ function cfg(): BridgeConfig {
 
 class FakeObs implements ObsClient {
   closeCb: ((e: { code?: number; message?: string }) => void) | null = null;
-  constructor(private behavior: "ok" | "badpw" | "refused" | "hang" = "ok") {}
+  constructor(private behavior: "ok" | "badpw" | "refused" | "hang" | "sensitive-error" = "ok") {}
   async connect(_u: string, pw?: string) {
     if (this.behavior === "hang") return new Promise<never>(() => {});
     if (this.behavior === "refused") throw Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:4455"), { code: 1006 });
+    if (this.behavior === "sensitive-error") {
+      throw Object.assign(new Error(`authentication payload password=${PASSWORD} token=${TOKEN} url=ws://127.0.0.1:4455`), { code: "EINTERNAL" });
+    }
     if (this.behavior === "badpw" || pw !== PASSWORD) throw Object.assign(new Error("Authentication failed."), { code: 4009 });
     return { negotiatedRpcVersion: 1 };
   }
@@ -38,16 +41,18 @@ class FakeObs implements ObsClient {
   on(_e: "ConnectionClosed", cb: (e: { code?: number; message?: string }) => void) { this.closeCb = cb; }
 }
 
-function setup(behaviors: Array<"ok" | "badpw" | "refused" | "hang"> = ["ok"], autoReconnect = false) {
+function setup(behaviors: Array<"ok" | "badpw" | "refused" | "hang" | "sensitive-error"> = ["ok"], autoReconnect = false) {
   const c = cfg();
   const clients: FakeObs[] = [];
+  const logs: string[] = [];
   let n = 0;
   const adapter = new ObsWebSocketAdapter(() => { const f = new FakeObs(behaviors[Math.min(n++, behaviors.length - 1)]); clients.push(f); return f; }, {
     url: c.obsUrl, password: c.obsPassword, timeoutMs: 100, autoReconnect, reconnectBaseMs: 5,
+    log: (message) => logs.push(message),
   });
   const app = buildApp(c, adapter);
   const H = { host: "127.0.0.1:4466", "x-vsr-token": TOKEN };
-  return { app, adapter, clients, H };
+  return { app, adapter, clients, H, logs };
 }
 
 describe("[mock] config validation", () => {
@@ -103,6 +108,17 @@ describe("[mock] health & security", () => {
     const r = await app.inject({ method: "POST", url: "/api/obs/connect", headers: { ...H, "content-type": "application/json" }, payload: JSON.stringify({ x: "a".repeat(10000) }) });
     expect(r.statusCode).toBe(413);
   });
+  it("does not return parser exception details to the browser", async () => {
+    const { app, H } = setup();
+    const r = await app.inject({
+      method: "POST", url: "/api/obs/connect", headers: { ...H, "content-type": "application/json" },
+      payload: `{"${PASSWORD}${TOKEN}"`,
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.body).not.toContain(PASSWORD);
+    expect(r.body).not.toContain(TOKEN);
+    expect(r.body).not.toContain("SyntaxError");
+  });
 });
 
 describe("[mock] OBS connection", () => {
@@ -129,6 +145,18 @@ describe("[mock] OBS connection", () => {
     const { app, H } = setup(["hang"]);
     const r = await app.inject({ method: "POST", url: "/api/obs/connect", headers: H });
     expect(r.json().errorCode).toBe("TIMEOUT");
+  });
+  it("does not expose raw OBS exception details in logs or API errors", async () => {
+    const { app, H, logs } = setup(["sensitive-error"]);
+    const r = await app.inject({ method: "POST", url: "/api/obs/connect", headers: H });
+    const output = `${JSON.stringify(logs)} ${r.body}`;
+    expect(r.statusCode).toBe(502);
+    expect(r.json().errorCode).toBe("INTERNAL");
+    expect(output).toContain("[obs] INTERNAL");
+    expect(output).not.toContain(PASSWORD);
+    expect(output).not.toContain(TOKEN);
+    expect(output).not.toContain("authentication payload");
+    expect(output).not.toContain("ws://127.0.0.1:4455");
   });
   it("returns 409 for scenes when not connected", async () => {
     const { app, H } = setup();

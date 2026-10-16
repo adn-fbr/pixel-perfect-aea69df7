@@ -23,15 +23,14 @@ export interface AdapterOptions {
 
 const now = () => new Date().toISOString();
 
-/** Maps obs-websocket close codes / socket errors to bridge error codes. */
-export function classifyError(err: { code?: number; message?: string } | unknown): { code: ErrorCode; message: string } {
-  const e = (err ?? {}) as { code?: number; message?: string };
-  const msg = String(e.message ?? "");
-  if (e.code === 4009 || /authentication/i.test(msg)) return { code: "AUTH_FAILED", message: "OBS rejected the WebSocket password. Check OBS > Tools > WebSocket Server Settings." };
-  if (/ECONNREFUSED|connect failed|1006/i.test(msg) || e.code === 1006) return { code: "CONNECTION_REFUSED", message: "Could not reach OBS. Is OBS running with the WebSocket server enabled on the configured port?" };
-  if (/timeout/i.test(msg)) return { code: "TIMEOUT", message: "OBS did not respond in time." };
-  if (e.code === 204 || /unknown request|not found/i.test(msg)) return { code: "UNSUPPORTED_REQUEST", message: `OBS does not support this request: ${msg}` };
-  return { code: "INTERNAL", message: msg || "Unknown OBS error" };
+/** Maps only known protocol/transport codes; exception messages are untrusted. */
+export function classifyError(err: { code?: number | string } | unknown): { code: ErrorCode; message: string } {
+  const code = err && typeof err === "object" ? (err as { code?: unknown }).code : undefined;
+  if (code === 4009) return { code: "AUTH_FAILED", message: "OBS authentication failed. Check the WebSocket credentials in the bridge configuration." };
+  if (code === "ECONNREFUSED" || code === 1006) return { code: "CONNECTION_REFUSED", message: "Could not reach OBS. Confirm that OBS and its WebSocket server are running." };
+  if (code === "BRIDGE_TIMEOUT") return { code: "TIMEOUT", message: "OBS did not respond before the bridge request timed out." };
+  if (code === 204) return { code: "UNSUPPORTED_REQUEST", message: "OBS does not support the requested WebSocket operation." };
+  return { code: "INTERNAL", message: "OBS operation failed. Check the bridge diagnostic code for details." };
 }
 
 export class ObsWebSocketAdapter implements ObsAdapter {
@@ -47,12 +46,12 @@ export class ObsWebSocketAdapter implements ObsAdapter {
 
   private setError(code: ErrorCode, message: string, state: ObsStatus["state"] = "OBS_ERROR") {
     this.status = { ...this.status, state, connectedAt: null, lastError: { code, message, at: now() } };
-    this.opts.log?.(`[obs] ${code}: ${message}`);
+    this.opts.log?.(`[obs] ${code}`);
   }
 
   private withTimeout<T>(p: Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error("timeout")), this.opts.timeoutMs);
+      const t = setTimeout(() => reject(Object.assign(new Error(), { code: "BRIDGE_TIMEOUT" })), this.opts.timeoutMs);
       p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
     });
   }
@@ -81,14 +80,14 @@ export class ObsWebSocketAdapter implements ObsAdapter {
     }
   }
 
-  private onClosed(client: ObsClient, err: { code?: number; message?: string }) {
+  private onClosed(client: ObsClient, _err: { code?: number; message?: string }) {
     if (client !== this.client) return;
     this.client = null;
     if (this.manualDisconnect) {
       this.status = { ...this.status, state: "OBS_DISCONNECTED", connectedAt: null };
       return;
     }
-    this.setError("UNEXPECTED_DISCONNECT", `OBS connection closed unexpectedly (code ${err?.code ?? "?"}). OBS may have been shut down.`, "OBS_DISCONNECTED");
+    this.setError("UNEXPECTED_DISCONNECT", "OBS connection closed unexpectedly. OBS may have been shut down.", "OBS_DISCONNECTED");
     this.scheduleReconnect();
   }
 

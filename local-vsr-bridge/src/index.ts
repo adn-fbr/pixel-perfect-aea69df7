@@ -41,7 +41,7 @@ async function main() {
 
   await app.listen({ host: config.host, port: config.port });
   console.log(`\nLocal VSR Bridge v${BRIDGE_VERSION} listening on http://${config.host}:${config.port}`);
-  console.log(`OBS target: ${config.obsUrl} (password ${config.obsPassword ? "set" : "NOT set"})`);
+  console.log(`OBS WebSocket target: configured (password ${config.obsPassword ? "set" : "NOT set"})`);
   console.log(`Allowed origins: ${config.allowedOrigins.join(", ")}`);
   if (config.pairingTokenGenerated) {
     console.log(`\nPairing token (paste into Diagnostics, valid until the bridge stops):\n  ${config.pairingToken}\n`);

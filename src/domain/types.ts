@@ -1,4 +1,5 @@
-export type IntegrationMode = "DEMO" | "CONNECTING" | "OBS_CONNECTED" | "REPLAY_READY" | "DEGRADED" | "DISCONNECTED";
+export type IntegrationMode = "DEMO" | "CONNECTING" | "OBS_CONNECTED" | "REPLAY_READY" | "DISCONNECTED";
+export type DiscoveryStatus = "IDLE" | "REFRESHING" | "READY" | "ERROR";
 
 export type IncidentStatus = "MARKED" | "CAPTURING" | "READY" | "UNDER_REVIEW" | "COMPLETED" | "FAILED";
 
@@ -88,6 +89,8 @@ export interface BridgeInfo {
   scenes: { name: string; index: number }[];
   currentScene: string | null;
   sources: { name: string; kind: string }[];
+  discoveryStatus: DiscoveryStatus;
+  discoveryError: { code: string; message: string; at: string } | null;
   lastError: { code: string; message: string; at: string } | null;
   lastCheckedAt: string | null;
 }

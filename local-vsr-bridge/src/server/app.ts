@@ -26,7 +26,7 @@ export function buildApp(config: BridgeConfig, adapter: ObsAdapter, opts: { logg
 
   app.setErrorHandler((err: { statusCode?: number; message?: string }, _req, reply) => {
     const status = err.statusCode && err.statusCode < 500 ? err.statusCode : 500;
-    reply.code(status).send(status === 500 ? fail("INTERNAL", "Internal bridge error") : fail("INVALID_REQUEST", redact(err.message ?? "Invalid request", secrets)));
+    reply.code(status).send(status === 500 ? fail("INTERNAL", "Internal bridge error") : fail("INVALID_REQUEST", "Invalid request"));
   });
 
   // Health reports the BRIDGE only. It never claims OBS connectivity.

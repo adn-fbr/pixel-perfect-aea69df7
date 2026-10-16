@@ -53,6 +53,10 @@ export function BridgePanel() {
       </dl>
       {live && (
         <div className="grid grid-cols-2 gap-4 border-t p-4 text-sm">
+          <div className="col-span-2 text-xs text-muted-foreground" role="status">
+            Discovery: {discoveryLabel(b.discoveryStatus)}
+            {b.discoveryError && <span className="ml-2 text-live">{b.discoveryError.code}: {b.discoveryError.message}</span>}
+          </div>
           <div>
             <div className="mb-2 font-mono text-xs uppercase text-muted-foreground">Scenes ({b.scenes.length})</div>
             <ul className="space-y-1">{b.scenes.map((s) => <li key={s.name} className="font-mono text-xs">{s.name}{s.name === b.currentScene && <span className="text-ok"> ● program</span>}</li>)}</ul>
@@ -77,6 +81,15 @@ export function BridgePanel() {
       )}
     </section>
   );
+}
+
+function discoveryLabel(status: string) {
+  switch (status) {
+    case "REFRESHING": return "refreshing scenes and sources";
+    case "READY": return "scenes and sources refreshed";
+    case "ERROR": return "unavailable; OBS connection status is shown separately";
+    default: return "not checked";
+  }
 }
 
 function Cell({ k, v }: { k: string; v: string }) {
